@@ -75,6 +75,18 @@ pub unsafe extern fn user_trap() {
         ScauseType::Unknown => {
             println!("scause {:#x}", scause::read());
             println!("sepc={:#x} stval={:#x}", sepc::read(), stval::read());
+            // dump some process context to help debug unexpected traps
+            let pid = p.excl.lock().pid;
+            println!("current pid = {}", pid);
+            let tf_ptr = unsafe { p.data.get().as_ref().unwrap().tf };
+            if !tf_ptr.is_null() {
+                let tf = unsafe { tf_ptr.as_ref().unwrap() };
+                println!("trapframe: epc={:#x} a0={} a7={} ra={:#x} sp={:#x}", tf.epc, tf.a0, tf.a7, tf.ra, tf.sp);
+            } else {
+                println!("trapframe pointer is null");
+            }
+            // Instead of panicking, exit the current process to allow the system to continue
+            println!("Terminating process {} due to unknown trap", pid);
             p.abondon(-1);
         }
     }

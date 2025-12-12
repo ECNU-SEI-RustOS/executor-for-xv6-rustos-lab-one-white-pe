@@ -915,6 +915,48 @@ impl PageTable {
             debug_assert_eq!(src, va.as_usize());
         }
     }
+
+    /// # 功能说明
+    /// 递归打印页表的所有有效页表项，显示页表结构和虚拟-物理地址映射。
+    /// 使用递归遍历多级页表，根据深度缩进显示层次关系。
+    ///
+    /// # 参数
+    /// - `&self`：页表的不可变引用。
+    /// - `level`：当前页表的层级深度（0为顶层，1为中层，2为最底层）。
+    ///
+    /// # 返回值
+    /// 无返回值。
+    pub fn vm_print(&self, level: usize) {
+        // 第一次调用时（level=0）打印页表基地址
+        if level == 0 {
+            println!("page table 0x{:x}", self as *const _ as usize);
+        }
+
+        // 遍历当前页表的所有512个条目
+        for i in 0..512 {
+            let pte = &self.data[i];
+            
+            // 只打印有效的页表项
+            if pte.is_valid() {
+                // 打印缩进：每级加一个 ".."，除了最后一个后面需要空格分隔
+                for j in 0..=level {
+                    print!("..");
+                    if j < level {
+                        print!(" ");
+                    }
+                }
+                
+                // 打印页表项索引、控制位和物理地址
+                println!("{}: pte 0x{:x} pa 0x{:x}", i, pte.data, pte.as_phys_addr().as_usize());
+                
+                // 如果不是最后一层（叶子层），递归打印下一层
+                if level < 2 {
+                    let next_table = unsafe { (pte.as_page_table() as *const PageTable).as_ref().unwrap() };
+                    next_table.vm_print(level + 1);
+                }
+            }
+        }
+    }
 }
 
 impl Drop for PageTable {

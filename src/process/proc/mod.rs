@@ -102,6 +102,8 @@ pub struct ProcData {
     pub pagetable: Option<Box<PageTable>>,
     /// 进程当前工作目录的 inode。
     pub cwd: Option<Inode>,
+    /// syscall trace mask for this process. Each bit represents a syscall number.
+    pub trace_mask: u32,
 }
 
 
@@ -116,6 +118,7 @@ impl ProcData {
             tf: ptr::null_mut(),
             pagetable: None,
             cwd: None,
+            trace_mask: 0,
         }
     }
 
@@ -520,6 +523,7 @@ impl Proc {
             19 => self.sys_link(),
             20 => self.sys_mkdir(),
             21 => self.sys_close(),
+            22 => self.sys_trace(),
             _ => {
                 panic!("unknown syscall num: {}", a7);
             }
@@ -528,6 +532,25 @@ impl Proc {
             Ok(ret) => ret,
             Err(()) => -1isize as usize,
         };
+
+        // syscall name table for printing
+        let syscall_names: [&str; 23] = [
+            "unused",
+            "fork","exit","wait","pipe","read","kill","exec","fstat","chdir",
+            "dup","getpid","sbrk","sleep","uptime","open","write","mknod","unlink",
+            "link","mkdir","close","trace",
+        ];
+
+        // If this process has tracing enabled for this syscall, print trace
+        if a7 < syscall_names.len() {
+            let mask = self.data.get_mut().trace_mask;
+            if a7 < 32 && (mask & (1u32 << a7)) != 0 {
+                let pid = self.excl.lock().pid;
+                // Print as signed value so -1 errors display as -1 not as usize::MAX
+                let ret_val = tf.a0 as i64;
+                println!("{}: syscall {} -> {}", pid, syscall_names[a7], ret_val);
+            }
+        }
     }
 
     /// # 功能说明
@@ -687,6 +710,8 @@ impl Proc {
         // clone opened files and cwd
         cdata.open_files.clone_from(&pdata.open_files);
         cdata.cwd.clone_from(&pdata.cwd);
+        // copy trace mask so child inherits tracing settings
+        cdata.trace_mask = pdata.trace_mask;
         
         // copy process name
         cdata.name.copy_from_slice(&pdata.name);

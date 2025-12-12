@@ -39,6 +39,7 @@ pub trait Syscall {
     fn sys_link(&mut self) -> SysResult;
     fn sys_mkdir(&mut self) -> SysResult;
     fn sys_close(&mut self) -> SysResult;
+    fn sys_trace(&mut self) -> SysResult;
 }
 
 impl Syscall for Proc {
@@ -163,7 +164,16 @@ impl Syscall for Proc {
             }
             if uarg == 0 {
                 match elf::load(self, &path, &argv[..i]) {
-                    Ok(ret) => result = Ok(ret),
+                    Ok(ret) => {
+                        result = Ok(ret);
+                        // Print page table for pid 1 after successful exec
+                        let guard = self.excl.lock();
+                        if guard.pid == 1 {
+                            let data = self.data.get_mut();
+                            data.pagetable.as_ref().unwrap().vm_print(0);
+                        }
+                        drop(guard);
+                    },
                     Err(s) => error = s,
                 }
                 break       
@@ -496,6 +506,13 @@ impl Syscall for Proc {
         println!("[{}].close(fd={}), file={:?}", self.excl.lock().pid, fd, file);
 
         drop(file);
+        Ok(0)
+    }
+
+    /// Set the syscall trace mask for current process.
+    fn sys_trace(&mut self) -> SysResult {
+        let mask = self.arg_raw(0) as u32;
+        self.data.get_mut().trace_mask = mask;
         Ok(0)
     }
 }
